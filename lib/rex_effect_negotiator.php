@@ -19,18 +19,7 @@ class rex_effect_negotiator extends rex_effect_abstract
             return;
         }
 
-        // Get image mime types accepted by the requesting browser
-        $possible_types = rex_server('HTTP_ACCEPT', 'string', '');
-        $types = explode(',', $possible_types);
-
-        $possibleFormat = Helper::getOutputFormat($types);
-
-        // User-Agent fallback: when Accept header doesn't carry explicit image format info.
-        // Typical case: Safari >= 16.4 supports AVIF but sends only */* in Accept.
-        if ($possibleFormat === 'default' && Helper::uaFallbackEnabled()) {
-            $userAgent = rex_server('HTTP_USER_AGENT', 'string', '');
-            $possibleFormat = Helper::getOutputFormatFromUserAgent($userAgent);
-        }
+        $possibleFormat = Helper::getRequestOutputFormat();
 
         if ($possibleFormat === 'avif') {
             $quality = Helper::getAvifQuality();

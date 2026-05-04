@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.1.2] - 2026-05-04
+
+### Performance
+- Konfigurationswerte (`webp_quality`, `avif_quality`, `preferred_format`, `ua_fallback`, `disable_avif`) werden jetzt per Request in statischen Eigenschaften gecacht – `rex_config::get()` wird nicht mehr bei jedem Effekt-Aufruf wiederholt aufgerufen.
+- `gd_info()` wird nur noch einmal pro Request ausgeführt (gecacht in `$gdInfoCache`).
+- `webpPossible()` und `avifPossible()` werden pro Request gecacht.
+- Format-Auflösung (Accept-Header + UA-Parsing) findet jetzt nur noch einmal statt: `boot.php` und `rex_effect_negotiator` teilen sich das Ergebnis via `Helper::getRequestOutputFormat()`.
+
 ## [6.1.1] - 2026-05-04
 
 ### Fixed

@@ -20,15 +20,7 @@ rex_extension::register('MEDIA_MANAGER_INIT', function (rex_extension_point $ep)
     foreach ($effects as $effect) {
         if ($effect['effect'] === 'negotiator') {
             // change cache path for negotiator
-            $possible_types = rex_server('HTTP_ACCEPT', 'string', '');
-            $types = explode(',', $possible_types);
-            $possibleFormat = FriendsOfRedaxo\MediaNegotiator\Helper::getOutputFormat($types);
-
-            // UA fallback for cache path when Accept header carries no explicit image format
-            if ($possibleFormat === 'default' && FriendsOfRedaxo\MediaNegotiator\Helper::uaFallbackEnabled()) {
-                $userAgent = rex_server('HTTP_USER_AGENT', 'string', '');
-                $possibleFormat = FriendsOfRedaxo\MediaNegotiator\Helper::getOutputFormatFromUserAgent($userAgent);
-            }
+            $possibleFormat = FriendsOfRedaxo\MediaNegotiator\Helper::getRequestOutputFormat();
 
             // Include effective conversion config in cache key so changed quality/settings
             // produce fresh derivatives instead of serving stale cached files.

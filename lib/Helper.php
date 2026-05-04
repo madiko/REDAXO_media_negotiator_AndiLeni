@@ -142,9 +142,24 @@ class Helper
         return 'default';
     }
 
+    private static ?bool $uaFallbackCache = null;
+    private static ?string $preferredFormatCache = null;
+    private static ?int $webpQualityCache = null;
+    private static ?int $avifQualityCache = null;
+    private static ?bool $avifDisabledCache = null;
+    private static ?bool $webpPossibleCache = null;
+    private static ?bool $avifPossibleCache = null;
+    private static ?array $gdInfoCache = null;
+    /** Resolved output format for the current request (keyed by Accept header). */
+    private static ?string $resolvedFormatCache = null;
+    private static ?string $resolvedFormatCacheKey = null;
+
     public static function uaFallbackEnabled(): bool
     {
-        return (bool) rex_config::get('media_negotiator', 'ua_fallback', false);
+        if (null === self::$uaFallbackCache) {
+            self::$uaFallbackCache = (bool) rex_config::get('media_negotiator', 'ua_fallback', false);
+        }
+        return self::$uaFallbackCache;
     }
 
     /**
@@ -153,23 +168,35 @@ class Helper
      */
     public static function getPreferredFormat(): string
     {
-        $val = (string) rex_config::get('media_negotiator', 'preferred_format', 'avif');
-        return in_array($val, ['avif', 'webp'], true) ? $val : 'avif';
+        if (null === self::$preferredFormatCache) {
+            $val = (string) rex_config::get('media_negotiator', 'preferred_format', 'avif');
+            self::$preferredFormatCache = in_array($val, ['avif', 'webp'], true) ? $val : 'avif';
+        }
+        return self::$preferredFormatCache;
     }
 
     public static function getWebpQuality(): int
     {
-        return (int) rex_config::get('media_negotiator', 'webp_quality', 80);
+        if (null === self::$webpQualityCache) {
+            self::$webpQualityCache = (int) rex_config::get('media_negotiator', 'webp_quality', 80);
+        }
+        return self::$webpQualityCache;
     }
 
     public static function getAvifQuality(): int
     {
-        return (int) rex_config::get('media_negotiator', 'avif_quality', 60);
+        if (null === self::$avifQualityCache) {
+            self::$avifQualityCache = (int) rex_config::get('media_negotiator', 'avif_quality', 60);
+        }
+        return self::$avifQualityCache;
     }
 
     private static function avifDisabled(): bool
     {
-        return (bool) rex_config::get('media_negotiator', 'disable_avif', false);
+        if (null === self::$avifDisabledCache) {
+            self::$avifDisabledCache = (bool) rex_config::get('media_negotiator', 'disable_avif', false);
+        }
+        return self::$avifDisabledCache;
     }
 
     /** @var list<string>|null */
@@ -194,47 +221,80 @@ class Helper
 
     public static function webpPossible(): bool
     {
+        if (null !== self::$webpPossibleCache) {
+            return self::$webpPossibleCache;
+        }
         $imagickFormats = self::getImagickFormats();
-        // WebP is possible via GD (imagewebp + GD flag) OR via Imagick (WEBP codec)
         $viaGd      = function_exists('imagewebp') && self::gdSupportsWebp();
         $viaImagick = in_array('WEBP', $imagickFormats, true);
-        return $viaGd || $viaImagick;
+        self::$webpPossibleCache = $viaGd || $viaImagick;
+        return self::$webpPossibleCache;
     }
 
     public static function avifPossible(): bool
     {
+        if (null !== self::$avifPossibleCache) {
+            return self::$avifPossibleCache;
+        }
         if (!\rex_version::compare(\rex::getVersion(), '5.15.0', '>=')) {
+            self::$avifPossibleCache = false;
             return false;
         }
         $imagickFormats = self::getImagickFormats();
-        // AVIF is possible via GD (imageavif + GD flag) OR via Imagick (AVIF codec)
         $viaGd      = function_exists('imageavif') && self::gdSupportsAvif();
         $viaImagick = in_array('AVIF', $imagickFormats, true);
-        return $viaGd || $viaImagick;
+        self::$avifPossibleCache = $viaGd || $viaImagick;
+        return self::$avifPossibleCache;
     }
 
     public static function gdSupportsWebp(): bool
     {
-        if (function_exists('gd_info')) {
-            $gdInfo = gd_info();
-            return isset($gdInfo['WebP Support']) && $gdInfo['WebP Support'];
-        } else {
-            return false;
-        }
+        $gdInfo = self::getGdInfo();
+        return isset($gdInfo['WebP Support']) && $gdInfo['WebP Support'];
     }
 
     public static function gdSupportsAvif(): bool
     {
-        if (function_exists('gd_info')) {
-            $gdInfo = gd_info();
-            return isset($gdInfo['AVIF Support']) && $gdInfo['AVIF Support'];
-        } else {
-            return false;
+        $gdInfo = self::getGdInfo();
+        return isset($gdInfo['AVIF Support']) && $gdInfo['AVIF Support'];
+    }
+
+    /** @return array<string, mixed> */
+    private static function getGdInfo(): array
+    {
+        if (null === self::$gdInfoCache) {
+            self::$gdInfoCache = function_exists('gd_info') ? gd_info() : [];
         }
+        return self::$gdInfoCache;
     }
 
     /**
-     * Convert a raw image blob via Imagick to a GdImage.
+     * Returns the resolved output format for the current HTTP request.
+     * Result is cached for the lifetime of the request so boot.php and the
+     * effect class share the same computation.
+     */
+    public static function getRequestOutputFormat(): string
+    {
+        $acceptHeader = rex_server('HTTP_ACCEPT', 'string', '');
+
+        if (self::$resolvedFormatCacheKey === $acceptHeader && null !== self::$resolvedFormatCache) {
+            return self::$resolvedFormatCache;
+        }
+
+        $types = explode(',', $acceptHeader);
+        $format = self::getOutputFormat($types);
+
+        if ($format === 'default' && self::uaFallbackEnabled()) {
+            $userAgent = rex_server('HTTP_USER_AGENT', 'string', '');
+            $format = self::getOutputFormatFromUserAgent($userAgent);
+        }
+
+        self::$resolvedFormatCacheKey = $acceptHeader;
+        self::$resolvedFormatCache = $format;
+        return $format;
+    }
+
+    /**
      * When $quality >= 0 the Imagick compression quality is applied before re-encoding.
      */
     public static function imagickConvert(string $gdImage, string $targetFormat, int $quality = -1): \GdImage|false
