@@ -122,7 +122,7 @@ ob_start(); ?>
 
         <h5><?= rex_i18n::msg('media_negotiator_setup_server_vips') ?></h5>
         <ul class="list-group">
-            <?= $statusRow($vipsAvailable, rex_i18n::msg('media_negotiator_setup_vips_installed')) ?>
+            <?= $statusRow($vipsAvailable, rex_i18n::msg($vipsAvailable ? 'media_negotiator_setup_vips_installed' : 'media_negotiator_setup_vips_not_installed')) ?>
             <?php if ($vipsVersion !== ''): ?>
             <li class="list-group-item" style="padding:8px 12px">
                 <i class="fa fa-info-circle text-muted" aria-hidden="true"></i>
