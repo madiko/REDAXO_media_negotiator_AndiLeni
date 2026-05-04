@@ -15,12 +15,27 @@ class rex_effect_srgb_preprocess extends rex_effect_abstract
 
     public function execute(): void
     {
-        if (!class_exists(Imagick::class)) {
+        $source = $this->media->getSource();
+        if ('' === $source) {
             return;
         }
 
-        $source = $this->media->getSource();
-        if ('' === $source) {
+        // Converter priority: vips > imagick
+        if (\FriendsOfRedaxo\MediaNegotiator\Helper::vipsPossible()) {
+            $srgbProfilePath = rex_addon::get('media_negotiator')->getPath(self::SRGB_PROFILE_PATH);
+            try {
+                $converted = \FriendsOfRedaxo\MediaNegotiator\Helper::vipsSrgbConvert($source, $srgbProfilePath);
+                if (false !== $converted) {
+                    $this->media->setImage($converted);
+                    $this->media->refreshImageDimensions();
+                }
+            } catch (Throwable) {
+                // Best-effort: keep original on failure
+            }
+            return;
+        }
+
+        if (!class_exists(Imagick::class)) {
             return;
         }
 
@@ -29,25 +44,8 @@ class rex_effect_srgb_preprocess extends rex_effect_abstract
             return;
         }
 
+        $imagick = new Imagick();
         try {
-            // Converter priority: vips > imagick
-            // vips handles ICC profiles natively and is faster / uses less memory.
-            if (\FriendsOfRedaxo\MediaNegotiator\Helper::vipsPossible()) {
-                $srgbProfilePath = rex_addon::get('media_negotiator')->getPath(self::SRGB_PROFILE_PATH);
-                $converted = \FriendsOfRedaxo\MediaNegotiator\Helper::vipsSrgbConvert($source, $srgbProfilePath);
-                if (false === $converted) {
-                    return; // no embedded ICC or conversion failed – keep original
-                }
-                $this->media->setImage($converted);
-                $this->media->refreshImageDimensions();
-                return;
-            }
-
-            if (!class_exists(Imagick::class)) {
-                return;
-            }
-
-            $imagick = new Imagick();
             $imagick->readImageBlob($source);
 
             // Match the core GD path: honour EXIF orientation before metadata is stripped.
@@ -56,17 +54,11 @@ class rex_effect_srgb_preprocess extends rex_effect_abstract
             $sourceProfiles = $imagick->getImageProfiles('icc', true);
             $hasSourceProfile = isset($sourceProfiles['icc']) && is_string($sourceProfiles['icc']) && '' !== $sourceProfiles['icc'];
 
-            // Without embedded source ICC there is no reliable profile conversion to do.
-            // In that case keep the original image untouched to avoid unnecessary re-encoding.
             if (!$hasSourceProfile) {
                 return;
             }
 
-            // Perform a real profile-to-profile conversion using the embedded source ICC.
             $imagick->profileImage('icc', $srgbProfile);
-
-            // Drop metadata, then re-embed the explicit sRGB profile so browsers render
-            // the derivative consistently instead of guessing an implicit colour space.
             $imagick->stripImage();
             $imagick->profileImage('icc', $srgbProfile);
 
