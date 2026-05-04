@@ -2,7 +2,7 @@
 
 REDAXO-Addon, das dem Media Manager einen Effekt für **HTTP Content Negotiation** hinzufügt. Der Browser teilt dem Server über den `Accept`-Header mit, welche Bildformate er unterstützt – Media Negotiator liefert daraufhin automatisch das optimale Format aus.
 
-Jetzt mit **libvips**-Support: Wenn die PHP-Extension `vips` installiert ist, wird sie automatisch bevorzugt eingesetzt und ist der deutlich schnellere und speicherfreundlichere Weg zu AVIF und WebP auf dem Server.
+Jetzt mit **libvips**-Support im Negotiator: Wenn die PHP-Extension `vips` installiert ist, wird sie fuer die AVIF-/WebP-Konvertierung automatisch bevorzugt eingesetzt und ist dort der deutlich schnellere und speicherfreundlichere Weg. Der separate ICC-/sRGB-Fix bleibt bewusst bei Imagick.
 
 ---
 
@@ -31,7 +31,7 @@ Der Effekt „Negotiate image format" liest den `Accept`-Header des Browsers und
 2. **WebP** – falls Browser und Server WebP unterstützen
 3. **Original** – als Fallback ohne Konvertierung
 
-Die Konvertierung erfolgt automatisch mit der besten verfügbaren Bibliothek (Priorität: **libvips › Imagick › GD**). Der Media Manager Cache wird je Format getrennt verwaltet, sodass Bilder nicht doppelt konvertiert werden.
+Die Formatkonvertierung des Negotiator-Effekts erfolgt automatisch mit der besten verfuegbaren Bibliothek (Prioritaet: **libvips > Imagick > GD**). Der Media Manager Cache wird je Format getrennt verwaltet, sodass Bilder nicht doppelt konvertiert werden.
 
 Weitere Informationen zu HTTP Content Negotiation: [MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/HTTP/Content_negotiation)
 
@@ -39,7 +39,7 @@ Weitere Informationen zu HTTP Content Negotiation: [MDN Web Docs](https://develo
 
 ## libvips – der schnelle Weg
 
-[libvips](https://www.libvips.org/) ist eine Bildverarbeitungsbibliothek, die für den Einsatz auf Webservern entwickelt wurde. Im Vergleich zu Imagick (ImageMagick) zeigt sie in der Praxis deutliche Vorteile:
+[libvips](https://www.libvips.org/) ist eine Bildverarbeitungsbibliothek, die fuer den Einsatz auf Webservern entwickelt wurde. In diesem Addon wird sie aktuell fuer die schnelle Ausgabe von **AVIF** und **WebP** im Negotiator verwendet. Im Vergleich zu Imagick (ImageMagick) zeigt sie dafuer in der Praxis deutliche Vorteile:
 
 | Merkmal | Imagick | libvips |
 |---|---|---|
@@ -47,7 +47,7 @@ Weitere Informationen zu HTTP Content Negotiation: [MDN Web Docs](https://develo
 | **Geschwindigkeit** | Mittel | **3–8× schneller** bei AVIF/WebP-Erzeugung |
 | **Memory-Leaks** | Bekanntes Problem (nativer C-Heap) | Kein vergleichbarer Overhead |
 | **AVIF / WebP** | ✓ (Codec-Abhängig) | ✓ |
-| **ICC-Profile** | ✓ | ✓ (nativ via `icc_transform`) |
+| **Einsatz in diesem Addon** | Negotiator und ICC-Fix moeglich, aktuell ICC-Fix aktiv | aktuell nur Negotiator |
 
 Gerade bei **vielen parallelen Requests** oder **großen Bildern** macht sich der Unterschied deutlich bemerkbar: Imagick lädt das Bild komplett in den PHP-Prozess-Speicher, libvips streamt es in Kacheln durch die Pipeline und schreibt direkt in das Zielformat. Das ist der Hauptgrund warum es unter Last zu Speicherüberlaufen und Server-Abstürzen kommen kann, wenn Imagick für Massenoperationen eingesetzt wird.
 
@@ -67,7 +67,7 @@ service php8.3-fpm restart
 php8.3 -r "echo vips_version() . PHP_EOL;"
 ```
 
-Sobald die Extension aktiv ist, verwendet Media Negotiator libvips automatisch – keine weitere Konfiguration nötig. Der Status wird auf der **Setup-Seite** angezeigt.
+Sobald die Extension aktiv ist, verwendet Media Negotiator libvips im Negotiator automatisch – keine weitere Konfiguration noetig. Der Status wird auf der **Setup-Seite** angezeigt.
 
 ---
 
@@ -75,7 +75,7 @@ Sobald die Extension aktiv ist, verwendet Media Negotiator libvips automatisch �
 
 Zusätzlich zum Negotiator-Effekt bringt das Addon den Effekt **„Farbraum nach sRGB konvertieren"** mit. Er ist für Uploads gedacht, die mit eingebettetem ICC-Profil kommen, zum Beispiel Adobe RGB aus Kameras oder Bildbearbeitung.
 
-Der Effekt arbeitet als Vorverarbeitung für Web-Derivate und verwendet bewusst weiter **ImageMagick/Imagick** für die ICC-Profiltransformation. Der Negotiator selbst darf für AVIF/WebP automatisch **libvips** bevorzugen, aber die eigentliche Farbraumkonvertierung bleibt auf dem bewährten Imagick-Pfad, da dieser in der Praxis bei eingebetteten ICC-Profilen die zuverlässigeren und visuell näher am Original liegenden Ergebnisse liefert.
+Der Effekt arbeitet als Vorverarbeitung fuer Web-Derivate und verwendet bewusst weiter **ImageMagick/Imagick** fuer die ICC-Profiltransformation. Der Negotiator selbst darf fuer AVIF/WebP automatisch **libvips** bevorzugen, aber die eigentliche Farbraumkonvertierung bleibt auf dem bewaehrten Imagick-Pfad, da dieser in der Praxis bei eingebetteten ICC-Profilen die zuverlaessigeren und visuell naeher am Original liegenden Ergebnisse liefert.
 
 Der Effekt arbeitet als Vorverarbeitung für Web-Derivate:
 
@@ -95,8 +95,8 @@ Wichtig: Den ICC-Fix-Effekt in der Effektkette möglichst **vor** Resize, Crop u
 
 | Format | libvips | GD                     | Imagick              |
 |--------|---------|------------------------|----------------------|
-| WebP   | ✓       | `imagewebp()` + GD-Flag | `WEBP`-Codec nötig  |
-| AVIF   | ✓       | `imageavif()` + GD-Flag | `AVIF`-Codec nötig  |
+| WebP   | ja, im Negotiator | `imagewebp()` + GD-Flag | `WEBP`-Codec noetig |
+| AVIF   | ja, im Negotiator | `imageavif()` + GD-Flag | `AVIF`-Codec noetig |
 
 ---
 
@@ -105,10 +105,11 @@ Wichtig: Den ICC-Fix-Effekt in der Effektkette möglichst **vor** Resize, Crop u
 - REDAXO ≥ 5.18.0
 - PHP ≥ 8.1
 - Media Manager Addon ≥ 2.17.0
-- Eines der folgenden (in Prioritätsreihenfolge):
-  - **libvips** PHP-Extension (`pecl install vips`) – empfohlen
+- Fuer den Negotiator mindestens eines der folgenden:
+  - **libvips** PHP-Extension (`pecl install vips`) - empfohlen
   - **Imagick** mit WebP/AVIF-Codec
-  - **GD** mit WebP- und/oder AVIF-Unterstützung
+  - **GD** mit WebP- und/oder AVIF-Unterstuetzung
+- Fuer den Effekt **„Farbraum nach sRGB konvertieren“** wird **Imagick** benoetigt.
 
 ---
 
@@ -136,11 +137,12 @@ Unter **Media Manager → Media Negotiator → Einstellungen** stehen folgende O
 
 | Option | Beschreibung | Standard |
 |--------|-------------|---------|
-| **Imagick erzwingen** | Imagick wird auch dann verwendet, wenn GD-Funktionen verfügbar sind | Nein |
+| **Imagick erzwingen** | Erzwingt im Negotiator Imagick statt libvips oder GD | Nein |
 | **AVIF deaktivieren** | Verhindert AVIF-Ausgabe, z. B. wenn der Server keinen AVIF-Codec besitzt | Nein |
 | **WebP-Qualität** | Kompressionsstufe für WebP (0–100) | 80 |
 | **AVIF-Qualität** | Kompressionsstufe für AVIF (0–100) | 60 |
 | **User-Agent-Fallback** | Format auch anhand des User-Agent ermitteln, wenn der Accept-Header keine expliziten Formate enthält | Nein |
+| **Bevorzugtes Format** | Steuert die Prioritaet der Ausgabe: `avif` oder `webp` | `avif` |
 
 ---
 
@@ -160,7 +162,7 @@ Der UA-Fallback greift nur wenn der Accept-Header keine expliziten Bildformate e
 
 ## Setup-Seite
 
-Unter **Media Manager → Media Negotiator → Setup** werden die verfügbaren Codecs und Bibliotheken auf dem Server angezeigt. Die Demo-Bilder werden bedarfsgesteuert geladen und nicht mehr direkt beim Seitenaufbau inline konvertiert.
+Unter **Media Manager → Media Negotiator → Setup** werden die verfuegbaren Codecs und Bibliotheken auf dem Server angezeigt, inklusive GD, Imagick und libvips. Die Demo-Bilder werden bedarfsgesteuert geladen und nicht mehr direkt beim Seitenaufbau inline konvertiert.
 
 ---
 
