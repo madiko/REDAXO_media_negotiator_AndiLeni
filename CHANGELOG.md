@@ -1,5 +1,20 @@
 # Changelog
 
+## [6.2.0] - 2026-05-06
+
+### Added
+- **Bild-Request-Probe**: Die Setup-Seite lädt jetzt ein echtes 1×1-Pixel-Bild gegen das Backend und liest dabei den vom Browser tatsächlich bei Bild-Requests gesendeten Accept-Header aus. Damit wird korrekt angezeigt, ob der Browser `image/avif` und `image/webp` unterstützt – unabhängig vom Accept-Header des HTML-Seiten-Requests.
+- Neuer Backend-API-Endpunkt `rex_api_media_negotiator_probe` (Backend-only, CSRF-frei für die Probe) speichert das Probe-Ergebnis in der Session und liefert es per JSON.
+- „Media Negotiator würde liefern"-Badge aktualisiert sich nach der Probe automatisch per JS auf den tatsächlichen Wert (AVIF/WebP/Original), inklusive Thumbs-up-Icon bei echtem Upgrade.
+- Accept-Header wird nun getrennt angezeigt: Seiten-Request vs. Bild-Request.
+- `Helper::avifDisabled()` von `private` auf `public` hochgestuft.
+
+### Fixed
+- Alle per JS oder `data-*`-Attribut verwendeten URLs werden jetzt mit `rex_url::backendController([...], false)` gebaut (kein `&amp;` in Fetch-/`img.src`-Kontexten).
+- Langer Accept-Header und User-Agent-String brechen nun korrekt um (`overflow-wrap`, `white-space: pre-wrap`).
+- Warning-Zustand in `$statusRow` und `renderProbeState()` verwendet keine eigenen Textfarb-Klassen mehr – Bootstrap `list-group-item-warning` regelt Farben vollständig.
+- Veraltete Kommentare in `Helper.php` zur Safari-Accept-Header-Problematik aktualisiert (gefixt in Safari 16.4: „Fixed the accept header to correctly indicate AVIF support").
+
 ## [6.1.4] - 2026-05-04
 
 ### Changed

@@ -22,7 +22,9 @@ class Helper
 
         // Only act on explicit image format declarations.
         // Wildcards like */* or image/* must NOT be treated as format support –
-        // e.g. Safari sends */* but does NOT support AVIF via Content-Negotiation.
+        // e.g. Safari < 16.4 sends */* for all requests and does NOT declare AVIF.
+        // Safari >= 16.4 fixed the Accept header (see Safari 16.4 release notes): image
+        // requests now include image/avif,image/webp; document requests still only carry text/html.
         // Firefox 132+ sends */* for page requests but image/avif,image/webp for <img> tags.
         $requestsAvif = in_array('image/avif', $types, true);
         $requestsWebp = in_array('image/webp', $types, true);
@@ -87,7 +89,12 @@ class Helper
     /**
      * Detect the best supported image format from the User-Agent string.
      * Used as fallback when the Accept header does not carry explicit format declarations.
-     * Notable case: Safari >= 16.4 supports AVIF but never sends image/avif in its Accept header.
+     *
+     * Notable case: Safari 16.0–16.3 supports AVIF (on macOS Ventura) but did NOT send
+     * image/avif in its Accept header. This was fixed in Safari 16.4 (see release notes:
+     * "Fixed the accept header to correctly indicate AVIF support"). From 16.4+, image
+     * (subresource) requests include image/avif – but document/HTML requests still do not.
+     * The UA fallback is therefore still needed whenever the server only sees the page request.
      */
     public static function getOutputFormatFromUserAgent(string $userAgent): string
     {
@@ -192,7 +199,7 @@ class Helper
         return self::$avifQualityCache;
     }
 
-    private static function avifDisabled(): bool
+    public static function avifDisabled(): bool
     {
         if (null === self::$avifDisabledCache) {
             self::$avifDisabledCache = (bool) rex_config::get('media_negotiator', 'disable_avif', false);

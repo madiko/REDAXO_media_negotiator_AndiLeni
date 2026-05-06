@@ -87,7 +87,7 @@ class rex_api_media_negotiator_demo extends rex_api_function
         return rex_url::backendController([
             'rex-api-call' => 'media_negotiator_demo',
             'format'       => $format,
-        ]);
+        ], false);
     }
 
     /**

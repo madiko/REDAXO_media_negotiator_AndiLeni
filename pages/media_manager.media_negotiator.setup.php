@@ -5,18 +5,27 @@ use FriendsOfRedaxo\MediaNegotiator\Helper;
 // ── helpers ────────────────────────────────────────────────────────────────
 
 /** Returns a check or times icon with the matching Bootstrap colour. */
-$icon = static function (bool $ok): string {
-    return $ok
-        ? '<i class="fa fa-check-circle text-success" aria-hidden="true"></i>'
-        : '<i class="fa fa-times-circle text-danger" aria-hidden="true"></i>';
+$icon = static function (string $state): string {
+    return match ($state) {
+        'success' => '<i class="fa fa-check-circle text-success" aria-hidden="true"></i>',
+        'warning' => '<i class="fa fa-info-circle" aria-hidden="true"></i>',
+        default => '<i class="fa fa-times-circle text-danger" aria-hidden="true"></i>',
+    };
 };
 
 /** One list-group row: icon + label [ + optional small text ]. */
-$statusRow = static function (bool $ok, string $label, string $sub = '') use ($icon): string {
-    $out = '<li class="list-group-item" style="padding:8px 12px">';
-    $out .= $icon($ok) . ' ' . $label;
+$statusRow = static function (bool $ok, string $label, string $sub = '', ?string $state = null) use ($icon): string {
+    $resolvedState = $state ?? ($ok ? 'success' : 'danger');
+    $itemClass = 'list-group-item';
+    if ($resolvedState === 'warning') {
+        $itemClass .= ' list-group-item-warning';
+    }
+
+    $out = '<li class="' . $itemClass . '" style="padding:8px 12px">';
+    $out .= $icon($resolvedState) . ' ' . $label;
     if ($sub !== '') {
-        $out .= ' <small class="text-muted">' . $sub . '</small>';
+        $subClass = $resolvedState === 'warning' ? '' : ' class="text-muted"';
+        $out .= ' <small' . $subClass . '>' . $sub . '</small>';
     }
     $out .= '</li>';
     return $out;
@@ -73,10 +82,22 @@ $browserDeclaredWebp = in_array('image/webp', array_map(
 $browserSupport    = Helper::getBrowserFormatSupport($userAgent);
 $uaBrowserAvif     = $browserSupport['avif'];
 $uaBrowserWebp     = $browserSupport['webp'];
+$acceptOnlyCurrentRequest = !$browserDeclaredAvif && !$browserDeclaredWebp && ($uaBrowserAvif || $uaBrowserWebp);
 
 $formatFromAccept  = Helper::getOutputFormat($acceptTypes);
 $formatFromUa      = Helper::getOutputFormatFromUserAgent($userAgent);
 $uaFallbackEnabled = Helper::uaFallbackEnabled();
+$probeToken = bin2hex(random_bytes(16));
+$probeImageUrl = rex_url::backendController([
+    'rex-api-call' => 'media_negotiator_probe',
+    'action' => 'image',
+    'token' => $probeToken,
+], false);
+$probeStatusUrl = rex_url::backendController([
+    'rex-api-call' => 'media_negotiator_probe',
+    'action' => 'status',
+    'token' => $probeToken,
+], false);
 
 // What would actually be delivered for this request?
 $wouldDeliver    = $formatFromAccept;
@@ -91,6 +112,15 @@ $formatBadge = match ($wouldDeliver) {
     'webp'  => '<span class="label label-info"    style="font-size:1em">' . rex_i18n::msg('media_negotiator_setup_format_webp') . '</span>',
     default => '<span class="label label-default" style="font-size:1em">' . rex_i18n::msg('media_negotiator_setup_format_original') . '</span>',
 };
+
+// Pre-built badge HTML for all three states (used by JS after probe)
+$badgeAvif     = '<span class="label label-success" style="font-size:1em">' . rex_i18n::msg('media_negotiator_setup_format_avif') . '</span>';
+$badgeWebp     = '<span class="label label-info"    style="font-size:1em">' . rex_i18n::msg('media_negotiator_setup_format_webp') . '</span>';
+$badgeOriginal = '<span class="label label-default" style="font-size:1em">' . rex_i18n::msg('media_negotiator_setup_format_original') . '</span>';
+$viaAcceptHtml = '<i class="fa fa-exchange"></i> ' . rex_i18n::msg('media_negotiator_setup_browser_via_accept');
+// Server capabilities (determine which badge JS should upgrade to)
+$serverAvif = $avifPossible && !Helper::avifDisabled();
+$serverWebp = Helper::webpPossible();
 
 // ── 1. Server section ──────────────────────────────────────────────────────
 
@@ -168,8 +198,14 @@ ob_start(); ?>
 <div class="row">
     <div class="col-sm-6">
         <ul class="list-group">
-            <?= $statusRow($browserDeclaredAvif, rex_i18n::msg('media_negotiator_setup_browser_declared_avif')) ?>
-            <?= $statusRow($browserDeclaredWebp, rex_i18n::msg('media_negotiator_setup_browser_declared_webp')) ?>
+            <?= $statusRow(
+                $browserDeclaredAvif,
+                rex_i18n::msg('media_negotiator_setup_browser_declared_avif')
+            ) ?>
+            <?= $statusRow(
+                $browserDeclaredWebp,
+                rex_i18n::msg('media_negotiator_setup_browser_declared_webp')
+            ) ?>
         </ul>
 
         <?php if (!$browserDeclaredAvif && !$browserDeclaredWebp): ?>
@@ -178,6 +214,38 @@ ob_start(); ?>
             <?= rex_i18n::msg('media_negotiator_setup_browser_no_accept_formats') ?>
         </p>
         <?php endif; ?>
+
+        <?php if ($acceptOnlyCurrentRequest): ?>
+        <p class="text-muted" style="margin-top:8px;font-size:0.9em">
+            <i class="fa fa-info-circle"></i>
+            <?= rex_i18n::msg('media_negotiator_setup_browser_accept_explainer') ?>
+        </p>
+        <?php endif; ?>
+
+        <h5 style="margin-top:16px"><?= rex_i18n::msg('media_negotiator_setup_browser_image_probe_title') ?></h5>
+        <ul class="list-group"
+            id="mn-image-probe"
+            data-image-url="<?= rex_escape($probeImageUrl) ?>"
+            data-status-url="<?= rex_escape($probeStatusUrl) ?>"
+            data-pending="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_probe_pending')) ?>"
+            data-no-result="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_probe_no_result')) ?>"
+            data-no-avif="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_probe_no_avif')) ?>"
+            data-no-webp="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_probe_no_webp')) ?>">
+            <li class="list-group-item" style="padding:8px 12px" data-probe-avif data-label="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_declared_avif')) ?>">
+                <i class="fa fa-spinner fa-spin text-muted" aria-hidden="true"></i>
+                <?= rex_i18n::msg('media_negotiator_setup_browser_declared_avif') ?>
+                <small class="text-muted"><?= rex_i18n::msg('media_negotiator_setup_browser_probe_pending') ?></small>
+            </li>
+            <li class="list-group-item" style="padding:8px 12px" data-probe-webp data-label="<?= rex_escape(rex_i18n::msg('media_negotiator_setup_browser_declared_webp')) ?>">
+                <i class="fa fa-spinner fa-spin text-muted" aria-hidden="true"></i>
+                <?= rex_i18n::msg('media_negotiator_setup_browser_declared_webp') ?>
+                <small class="text-muted"><?= rex_i18n::msg('media_negotiator_setup_browser_probe_pending') ?></small>
+            </li>
+        </ul>
+        <p class="text-muted" style="margin-top:8px;font-size:0.9em">
+            <i class="fa fa-info-circle"></i>
+            <?= rex_i18n::msg('media_negotiator_setup_browser_image_probe_notice') ?>
+        </p>
 
         <h5 style="margin-top:16px"><?= rex_i18n::msg('media_negotiator_setup_browser_ua_avif') ?> / <?= rex_i18n::msg('media_negotiator_setup_browser_ua_webp') ?></h5>
         <ul class="list-group">
@@ -195,10 +263,18 @@ ob_start(); ?>
         </ul>
     </div>
     <div class="col-sm-6">
-        <div class="panel panel-default" style="padding:16px 20px">
+        <div id="mn-deliver-badge"
+             class="panel panel-default"
+             style="padding:16px 20px"
+             data-badge-avif="<?= rex_escape($badgeAvif) ?>"
+             data-badge-webp="<?= rex_escape($badgeWebp) ?>"
+             data-badge-original="<?= rex_escape($badgeOriginal) ?>"
+             data-via-accept="<?= rex_escape($viaAcceptHtml) ?>"
+             data-server-avif="<?= $serverAvif ? '1' : '0' ?>"
+             data-server-webp="<?= $serverWebp ? '1' : '0' ?>">
             <p style="margin-bottom:6px"><strong><?= rex_i18n::msg('media_negotiator_setup_browser_would_deliver') ?>:</strong></p>
-            <p style="font-size:1.6em;margin:0 0 8px"><?= $formatBadge ?></p>
-            <p class="text-muted" style="font-size:0.85em;margin:0">
+            <p id="mn-deliver-badge-label" style="font-size:1.6em;margin:0 0 8px"><?= $formatBadge ?> <i id="mn-deliver-thumbs" class="fa-solid fa-thumbs-up text-success"<?= in_array($wouldDeliver, ['avif', 'webp'], true) ? '' : ' style="display:none"' ?>></i></p>
+            <p id="mn-deliver-badge-via" class="text-muted" style="font-size:0.85em;margin:0">
                 <?php if ($wouldDeliverVia === 'ua'): ?>
                     <i class="fa fa-user-circle"></i> <?= rex_i18n::msg('media_negotiator_setup_browser_via_ua') ?>
                 <?php else: ?>
@@ -207,13 +283,20 @@ ob_start(); ?>
             </p>
         </div>
 
-        <p style="margin-bottom:4px;font-size:0.85em;color:#777"><?= rex_i18n::msg('media_negotiator_setup_browser_accept_header') ?>:</p>
-        <code style="display:block;word-break:break-all;font-size:0.8em;background:#f5f5f5;padding:8px;border-radius:3px;margin-bottom:10px">
+        <p style="margin-bottom:4px;font-size:0.85em;color:#777"><?= rex_i18n::msg('media_negotiator_setup_browser_accept_header_page') ?>:</p>
+        <code style="display:block;word-break:break-all;overflow-wrap:break-word;white-space:pre-wrap;max-width:100%;font-size:0.8em;background:#f5f5f5;padding:8px;border-radius:3px;margin-bottom:10px">
             <?= rex_escape($acceptHeader ?: '–') ?>
         </code>
 
+        <p style="margin-bottom:4px;font-size:0.85em;color:#777"><?= rex_i18n::msg('media_negotiator_setup_browser_accept_header_image') ?>:</p>
+        <code id="mn-probe-accept" style="display:block;word-break:break-all;overflow-wrap:break-word;white-space:pre-wrap;max-width:100%;font-size:0.8em;background:#f5f5f5;padding:8px;border-radius:3px;margin-bottom:10px">
+            <?= rex_i18n::msg('media_negotiator_setup_browser_probe_pending') ?>
+        </code>
+
+        <img id="mn-probe-pixel" src="" alt="" width="1" height="1" style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+
         <p style="margin-bottom:4px;font-size:0.85em;color:#777"><?= rex_i18n::msg('media_negotiator_setup_browser_user_agent') ?>:</p>
-        <code style="display:block;word-break:break-all;font-size:0.8em;background:#f5f5f5;padding:8px;border-radius:3px">
+        <code style="display:block;word-break:break-all;overflow-wrap:break-word;white-space:pre-wrap;max-width:100%;font-size:0.8em;background:#f5f5f5;padding:8px;border-radius:3px">
             <?= rex_escape($userAgent ?: '–') ?>
         </code>
     </div>
@@ -266,7 +349,7 @@ $demos[] = [
     'label' => rex_i18n::msg('media_negotiator_setup_original') . ' (JPEG)',
     'mime'  => 'image/jpeg',
     'size'  => $size_jpeg,
-    'src'   => rex_url::backendController(['rex-api-call' => 'media_negotiator_demo', 'format' => 'jpeg']),
+    'src'   => rex_url::backendController(['rex-api-call' => 'media_negotiator_demo', 'format' => 'jpeg'], false),
 ];
 
 $engineLabel = $forceImagick ? 'Imagick' : 'GD/Imagick';

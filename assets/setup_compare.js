@@ -4,6 +4,139 @@
 
     var dragActive = false;
 
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderProbeState(node, ok, label, sub, forceWarning) {
+        var iconClass = ok ? 'fa-check-circle text-success' : 'fa-times-circle text-danger';
+        var itemClass = 'list-group-item';
+        var subClass = 'text-muted';
+
+        if (forceWarning) {
+            iconClass = 'fa-info-circle';
+            itemClass += ' list-group-item-warning';
+            subClass = '';
+        }
+
+        node.className = itemClass;
+        node.innerHTML = '<i class="fa ' + iconClass + '" aria-hidden="true"></i> '
+            + escapeHtml(label)
+            + (sub ? ' <small' + (subClass ? ' class="' + subClass + '"' : '') + '>' + escapeHtml(sub) + '</small>' : '');
+    }
+
+    function updateDeliverBadge(declaredAvif, declaredWebp) {
+        var panel = document.getElementById('mn-deliver-badge');
+        var labelNode = document.getElementById('mn-deliver-badge-label');
+        var viaNode = document.getElementById('mn-deliver-badge-via');
+        if (!panel || !labelNode || !viaNode) {
+            return;
+        }
+        var serverAvif = panel.dataset.serverAvif === '1';
+        var serverWebp = panel.dataset.serverWebp === '1';
+        var newBadge;
+
+        if (declaredAvif && serverAvif) {
+            newBadge = panel.dataset.badgeAvif;
+        } else if ((declaredWebp || declaredAvif) && serverWebp) {
+            newBadge = panel.dataset.badgeWebp;
+        } else {
+            newBadge = panel.dataset.badgeOriginal;
+        }
+
+        if (newBadge) {
+            var isUpgrade = declaredAvif && serverAvif || (declaredWebp || declaredAvif) && serverWebp;
+            var thumbs = isUpgrade ? ' <i class="fa-solid fa-thumbs-up text-success"></i>' : '';
+            labelNode.innerHTML = newBadge + thumbs;
+            viaNode.innerHTML = panel.dataset.viaAccept || '';
+        }
+    }
+
+    function initImageProbe() {
+        var probe = document.getElementById('mn-image-probe');
+        var probePixel = document.getElementById('mn-probe-pixel');
+        var acceptNode = document.getElementById('mn-probe-accept');
+        var avifNode;
+        var webpNode;
+        var imageUrl;
+        var statusUrl;
+        var attempts = 0;
+        var maxAttempts = 20;
+        var pendingText;
+        var noResultText;
+        var noAvifText;
+        var noWebpText;
+
+        if (!probe || !probePixel || !acceptNode || probe.dataset.mnProbeInit === '1') {
+            return;
+        }
+
+        avifNode = probe.querySelector('[data-probe-avif]');
+        webpNode = probe.querySelector('[data-probe-webp]');
+        imageUrl = probe.dataset.imageUrl;
+        statusUrl = probe.dataset.statusUrl;
+        pendingText = probe.dataset.pending || 'checking...';
+        noResultText = probe.dataset.noResult || pendingText;
+        noAvifText = probe.dataset.noAvif || '';
+        noWebpText = probe.dataset.noWebp || '';
+
+        if (!avifNode || !webpNode || !imageUrl || !statusUrl) {
+            return;
+        }
+
+        probe.dataset.mnProbeInit = '1';
+
+        function pollStatus() {
+            attempts += 1;
+
+            fetch(statusUrl, { credentials: 'same-origin' })
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (payload) {
+                    var useWarning;
+
+                    if (!payload || !payload.found) {
+                        if (attempts < maxAttempts) {
+                            window.setTimeout(pollStatus, 250);
+                            return;
+                        }
+
+                        acceptNode.textContent = noResultText;
+                        renderProbeState(avifNode, false, avifNode.dataset.label || '', noResultText, true);
+                        renderProbeState(webpNode, false, webpNode.dataset.label || '', noResultText, true);
+                        return;
+                    }
+
+                    acceptNode.textContent = payload.accept || '–';
+                    useWarning = !payload.declaredAvif && !payload.declaredWebp;
+
+                    renderProbeState(avifNode, !!payload.declaredAvif, avifNode.dataset.label || '', useWarning ? noAvifText : '', useWarning);
+                    renderProbeState(webpNode, !!payload.declaredWebp, webpNode.dataset.label || '', useWarning ? noWebpText : '', useWarning);
+                    updateDeliverBadge(!!payload.declaredAvif, !!payload.declaredWebp);
+                })
+                .catch(function () {
+                    if (attempts < maxAttempts) {
+                        window.setTimeout(pollStatus, 250);
+                        return;
+                    }
+
+                    acceptNode.textContent = noResultText;
+                    renderProbeState(avifNode, false, avifNode.dataset.label || '', noResultText, true);
+                    renderProbeState(webpNode, false, webpNode.dataset.label || '', noResultText, true);
+                });
+        }
+
+        acceptNode.textContent = pendingText;
+        probePixel.src = imageUrl + (imageUrl.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now();
+        pollStatus();
+    }
+
     function getParts() {
         var container = document.getElementById('mn-compare');
         if (!container) {
@@ -76,16 +209,16 @@
 
     function initAll() {
         var parts = getParts();
-        if (!parts) {
-            return;
+        if (parts) {
+            if (parts.container.dataset.mnInit !== '1') {
+                parts.container.dataset.mnInit = '1';
+                setPos(parts, 0.5);
+            }
+
+            applySelectedImages();
         }
 
-        if (parts.container.dataset.mnInit !== '1') {
-            parts.container.dataset.mnInit = '1';
-            setPos(parts, 0.5);
-        }
-
-        applySelectedImages();
+        initImageProbe();
     }
 
     function bindGlobalEvents() {
