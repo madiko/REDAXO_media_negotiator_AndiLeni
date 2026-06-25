@@ -328,11 +328,11 @@ class Helper
     }
 
     /**
-     * Convert a raw image blob via libvips to a GdImage.
+     * Convert a raw image blob via libvips to target format blob (not GdImage).
      * libvips is faster and uses far less memory than Imagick.
      * Returns false when vips is unavailable or conversion fails.
      */
-    public static function vipsConvert(string $blob, string $targetFormat, int $quality = -1): \GdImage|false
+    public static function vipsConvert(string $blob, string $targetFormat, int $quality = -1): string|false
     {
         if (!self::vipsPossible()) {
             return false;
@@ -353,7 +353,7 @@ class Helper
             return false;
         }
 
-        return imagecreatefromstring($out['buffer']);
+        return is_string($out['buffer']) ? $out['buffer'] : false;
     }
 
     /**
@@ -430,20 +430,29 @@ class Helper
     /**
      * When $quality >= 0 the Imagick compression quality is applied before re-encoding.
      */
-    public static function imagickConvert(string $gdImage, string $targetFormat, int $quality = -1): \GdImage|false
+    /**
+     * Convert image blob via Imagick to target format blob (not GdImage).
+     * Returns the converted blob directly without trying to decode with GD.
+     * Returns false when Imagick is unavailable or conversion fails.
+     */
+    public static function imagickConvert(string $blob, string $targetFormat, int $quality = -1): string|false
     {
-        $imagick = new Imagick();
+        if (!class_exists(\Imagick::class)) {
+            return false;
+        }
+
+        $imagick = new \Imagick();
         try {
-            $imagick->readImageBlob($gdImage);
+            $imagick->readImageBlob($blob);
             $imagick->setImageFormat($targetFormat);
             if ($quality >= 0) {
                 $imagick->setImageCompressionQuality($quality);
             }
-            $blob = $imagick->getImageBlob();
+            $result = $imagick->getImageBlob();
+            return is_string($result) ? $result : false;
         } finally {
             $imagick->clear();
             $imagick->destroy();
         }
-        return imagecreatefromstring($blob);
     }
 }

@@ -124,8 +124,11 @@ Installation über den REDAXO-Installer oder manuell durch Hochladen in `redaxo/
 1. Im REDAXO-Backend zu **Media Manager → Medientypen** navigieren.
 2. Den gewünschten Medientyp öffnen oder einen neuen anlegen.
 3. Optional bei farbkritischen Uploads zuerst den Effekt **„Farbraum nach sRGB konvertieren"** hinzufügen.
-4. Danach den Effekt **„Negotiate image format"** hinzufügen.
-5. Den Medientyp speichern.
+4. Alle weiteren Effekte (Resize, Crop, Filter …) hinzufügen.
+5. Den Effekt **„Negotiate image format"** als **letzten Effekt** hinzufügen.
+6. Den Medientyp speichern.
+
+> **⚠ Reihenfolge beachten:** Der Negotiator-Effekt muss immer **als letzter Effekt** in der Kette stehen. Er konvertiert das fertig transformierte Bild ins Zielformat (WebP/AVIF). Nachfolgende Effekte würden auf dem konvertierten Blob arbeiten – GD kann WebP/AVIF nicht lesen und würde fehlschlagen.
 
 Ab sofort liefert der Media Manager Bilder dieses Typs automatisch im optimalen Format aus.
 

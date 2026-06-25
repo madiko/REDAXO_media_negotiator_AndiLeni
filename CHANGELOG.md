@@ -1,5 +1,14 @@
 # Changelog
 
+## [6.2.1] - 2026-06-25
+
+### Fixed
+- **Converter-Kette vereinfacht**: vips und Imagick geben nun direkt den konvertierten Bild-Blob zurück (statt `GdImage`), womit der GD-Fallback entfällt. Fallback bei fehlschlagenden Konvertern ist jetzt das Original-Format (JPEG/PNG).
+- `Helper::vipsConvert()` und `Helper::imagickConvert()` liefern `string|false` statt `GdImage|false` – GD wird nicht mehr zum Dekodieren der Converter-Ausgabe verwendet.
+- `rex_effect_negotiator` nutzt eine `convertWithFallback()`-Methode mit `try/catch(\Throwable)`, um Converter-Fehler abzufangen ohne den Media-Request zu blockieren.
+- Konvertierter Blob wird über `setSourceFromBlob()` als Temp-Datei mit korrekter Format-Extension (`.webp`, `.avif`) gespeichert, was korrekte Content-Type- und Content-Disposition-Header sicherstellt.
+- Gesamte `execute()`-Logik in einen `try/catch(\Throwable)`-Block gewrappt, damit Negotiator-Fehler niemals einen Media-Manager-Request abbrechen.
+
 ## [6.2.0] - 2026-05-06
 
 ### Added

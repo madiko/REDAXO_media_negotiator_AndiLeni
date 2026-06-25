@@ -12,103 +12,99 @@ class rex_effect_negotiator extends rex_effect_abstract
 
     public function execute(): void
     {
-        // Skip non-raster formats that cannot be converted (SVG, GIF, ICO)
-        $skipExtensions = ['svg', 'gif', 'ico'];
-        $mediaPath = $this->media->getMediaPath() ?? '';
-        if (in_array(strtolower(rex_file::extension($mediaPath)), $skipExtensions, true)) {
+        try {
+            // Skip non-raster formats that cannot be converted (SVG, GIF, ICO)
+            $skipExtensions = ['svg', 'gif', 'ico'];
+            $mediaPath = $this->media->getMediaPath() ?? '';
+            if (in_array(strtolower(rex_file::extension($mediaPath)), $skipExtensions, true)) {
+                return;
+            }
+
+            $possibleFormat = Helper::getRequestOutputFormat();
+
+            // Downgrade AVIF to WebP only if neither GD nor other converters support it
+            if ($possibleFormat === 'avif' && !Helper::avifPossible()) {
+                $possibleFormat = Helper::webpPossible() ? 'webp' : 'default';
+            }
+
+            // Downgrade WebP to default only if no converter supports it at all
+            if ($possibleFormat === 'webp' && !Helper::webpPossible()) {
+                $possibleFormat = 'default';
+            }
+
+            if ($possibleFormat === 'avif') {
+                $this->convertWithFallback('avif', Helper::getAvifQuality(), 60);
+            } elseif ($possibleFormat === 'webp') {
+                $this->convertWithFallback('webp', Helper::getWebpQuality(), 80);
+            }
+            // else: deliver original file unchanged
+        } catch (\Throwable) {
+            // Never fail the media request because of negotiator issues.
+        }
+    }
+
+    private function convertWithFallback(string $targetFormat, int $quality, int $defaultQuality): void
+    {
+        // If AVIF cannot be decoded by GD, try WebP instead.
+        if ($targetFormat === 'avif' && !function_exists('imageavif') && !Helper::avifPossible()) {
+            $this->convertWithFallback('webp', Helper::getWebpQuality(), 80);
             return;
         }
 
-        $possibleFormat = Helper::getRequestOutputFormat();
+        $sourceBlob = file_get_contents($this->media->getMediaPath() ?? '') ?: null;
+        if ($sourceBlob === null) {
+            return; // Cannot read source file
+        }
 
-        if ($possibleFormat === 'avif') {
-            $quality = Helper::getAvifQuality();
-            $forceImagick = Helper::getForceImagick();
+        // Try converters in order: vips → imagick → original
+        $converters = ['vips', 'imagick'];
 
-            // Converter priority: vips > imagick > GD
-            $useVips = !$forceImagick && Helper::vipsPossible();
-            $useImagick = !$useVips && (
-                $forceImagick
-                || !function_exists('imageavif')
-                || ($quality !== 60 && class_exists(\Imagick::class))
-            );
+        foreach ($converters as $converter) {
+            $result = false;
 
-            if ($useVips) {
+            if ($converter === 'vips' && Helper::vipsPossible()) {
                 try {
-                    $converted = Helper::vipsConvert($this->media->getSource(), 'avif', $quality);
-                    if ($converted === false) {
+                    $result = Helper::vipsConvert($sourceBlob, $targetFormat, $quality);
+                    if (is_string($result)) {
+                        // Blob output - write to temp and set as source path
+                        $this->setSourceFromBlob($result, $targetFormat);
                         return;
                     }
-                    $this->media->setImage($converted);
-                    $this->media->setFormat('avif');
-                    $this->media->setHeader('Content-Type', 'image/avif');
-                    $this->media->refreshImageDimensions();
-                } catch (\Exception $e) {
-                    return;
+                } catch (\Throwable) {
+                    // Continue to next converter
                 }
-            } elseif ($useImagick) {
-                try {
-                    $converted = Helper::imagickConvert($this->media->getSource(), 'avif', $quality);
-                    if ($converted === false) {
-                        return;
-                    }
-                    $this->media->setImage($converted);
-                    $this->media->setFormat('avif');
-                    $this->media->setHeader('Content-Type', 'image/avif');
-                    $this->media->refreshImageDimensions();
-                } catch (\Exception $e) {
-                    return;
-                }
-            } else {
-                $re = new rex_effect_image_format();
-                $re->media = $this->media;
-                $re->params['convert_to'] = 'avif';
-                $re->execute();
             }
-        } elseif ($possibleFormat === 'webp') {
-            $quality = Helper::getWebpQuality();
-            $forceImagick = Helper::getForceImagick();
 
-            $useVips = !$forceImagick && Helper::vipsPossible();
-            $useImagick = !$useVips && (
-                $forceImagick
-                || !function_exists('imagewebp')
-                || ($quality !== 80 && class_exists(\Imagick::class))
-            );
-
-            if ($useVips) {
+            if ($converter === 'imagick' && class_exists('Imagick')) {
                 try {
-                    $converted = Helper::vipsConvert($this->media->getSource(), 'webp', $quality);
-                    if ($converted === false) {
+                    $result = Helper::imagickConvert($sourceBlob, $targetFormat, $quality);
+                    if (is_string($result)) {
+                        // Blob output - write to temp and set as source path
+                        $this->setSourceFromBlob($result, $targetFormat);
                         return;
                     }
-                    $this->media->setImage($converted);
-                    $this->media->setFormat('webp');
-                    $this->media->setHeader('Content-Type', 'image/webp');
-                    $this->media->refreshImageDimensions();
-                } catch (\Exception $e) {
-                    return;
+                } catch (\Throwable) {
+                    // Continue to next converter
                 }
-            } elseif ($useImagick) {
-                try {
-                    $converted = Helper::imagickConvert($this->media->getSource(), 'webp', $quality);
-                    if ($converted === false) {
-                        return;
-                    }
-                    $this->media->setImage($converted);
-                    $this->media->setFormat('webp');
-                    $this->media->setHeader('Content-Type', 'image/webp');
-                    $this->media->refreshImageDimensions();
-                } catch (\Exception $e) {
-                    return;
-                }
-            } else {
-                $re = new rex_effect_image_format();
-                $re->media = $this->media;
-                $re->params['convert_to'] = 'webp';
-                $re->execute();
             }
         }
-        // else: deliver original file unchanged
+
+        // All converters failed, keep original image (no GD fallback)
+    }
+
+    private function setSourceFromBlob(string $blob, string $format): void
+    {
+        // Write blob to temp file with correct format extension
+        $tempFilename = uniqid('blob_', true) . '.' . $format;
+        $tempPath = rex_path::addonCache('media_negotiator', $tempFilename);
+        rex_file::put($tempPath, $blob);
+        
+        // Set media path (this will extract filename from path) and then set format
+        $this->media->setMediaPath($tempPath);
+        $this->media->setFormat($format);
+        
+        // Set both Content-Type AND Content-Disposition headers
+        $this->media->setHeader('Content-Type', 'image/' . $format);
+        $this->media->setHeader('Content-Disposition', 'inline; filename="' . $tempFilename . '";');
     }
 }

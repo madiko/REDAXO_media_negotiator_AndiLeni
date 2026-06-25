@@ -122,6 +122,14 @@ $viaAcceptHtml = '<i class="fa fa-exchange"></i> ' . rex_i18n::msg('media_negoti
 $serverAvif = $avifPossible && !Helper::avifDisabled();
 $serverWebp = Helper::webpPossible();
 
+// ── 0. Hinweis zur Effekt-Reihenfolge ─────────────────────────────────────
+echo rex_view::info(
+    '<strong><i class="fa fa-sort-numeric-asc" aria-hidden="true"></i> '
+    . rex_escape(rex_i18n::msg('media_negotiator_setup_effect_order_title'))
+    . ':</strong> '
+    . rex_escape(rex_i18n::msg('media_negotiator_setup_effect_order_hint'))
+);
+
 // ── 1. Server section ──────────────────────────────────────────────────────
 
 ob_start(); ?>

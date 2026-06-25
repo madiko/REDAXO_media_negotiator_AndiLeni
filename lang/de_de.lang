@@ -145,3 +145,7 @@ media_negotiator_icc_fix_success_remove = Effekt entfernt: %s Typ(en) aktualisie
 
 # Demo-Seite
 media_negotiator_setup_demo_size_pending = wird geladen …
+
+# Effekt-Reihenfolge
+media_negotiator_setup_effect_order_title = Reihenfolge der Effekte
+media_negotiator_setup_effect_order_hint = Der Effekt „Negotiate image format" muss immer als letzter Effekt in der Kette stehen. Alle Bild-Transformationen (Resize, Crop, Filter) müssen davor ausgeführt werden – nachfolgende GD-Effekte können das konvertierte WebP/AVIF-Bild nicht lesen.
