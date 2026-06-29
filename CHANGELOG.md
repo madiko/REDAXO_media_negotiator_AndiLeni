@@ -1,5 +1,11 @@
 # Changelog
 
+## [6.2.2] - 2026-06-29
+
+### Fixed
+- **Focus-Point-Crop bleibt bei WebP/AVIF erhalten**: `rex_effect_negotiator` verwendet in `convertWithFallback()` jetzt die aktuell prozessierte Quelle aus der Effektkette (`$this->media->getSource()`) statt den Original-Dateipfad (`getMediaPath()`).
+- Damit gehen Crops aus vorgeschalteten Effekten (z. B. Focus-Point-Fit) bei ausgehandelten Formaten nicht mehr verloren.
+
 ## [6.2.1] - 2026-06-25
 
 ### Fixed
